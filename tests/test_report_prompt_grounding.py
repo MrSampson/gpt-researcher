@@ -1,6 +1,6 @@
 """Regression test: the default report prompt must license per-claim grounding refusal.
 
-Issue spark-ba88#23: the default `generate_report_prompt` demanded a
+The default `generate_report_prompt` demanded a
 comprehensive, opinionated report but never told the model what to do when
 a source it would otherwise cite doesn't actually support the specific
 claim next to its citation -- so the model bridged the gap with plausible
