@@ -13,9 +13,19 @@ exercised through extract_data_from_url with both the originally-dispatched
 backend and PyMuPDFScraper replaced by stubs, to confirm the method
 actually retries and recovers, or falls back to a fetch-failure shape if
 the retry also fails.
+
+extract_data_from_url now also runs the SSRF/local-file guard
+(gpt_researcher.utils.url_security.validate_url) before dispatching to a
+scraper backend, which does a live DNS lookup. socket.getaddrinfo is
+patched to a fixed public IP throughout this module so these tests stay
+hermetic and exercise the PDF-retry logic itself rather than incidentally
+depending on "repo.example.edu" -- not a real registered domain --
+resolving.
 """
 
+import socket
 import unittest
+from unittest.mock import patch
 
 from gpt_researcher.scraper.scraper import Scraper, _looks_like_unextracted_pdf
 
@@ -78,6 +88,14 @@ class ExtractDataFromUrlPdfRetryTests(unittest.IsolatedAsyncioTestCase):
         "38 0 obj\n<< /Type /Annot /BS 3782 0 R /AP 3783 0 R >>\nendobj\n"
         "xref\n0001355793 00000 n trailer\n"
     ) * 9  # must clear _MIN_CONTENT_LENGTH so retry-triggering tests reach the PDF-structure check
+
+    def setUp(self):
+        patcher = patch(
+            "socket.getaddrinfo",
+            return_value=[(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 0))],
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def _scraper(self):
         return Scraper(urls=["https://example.com"], user_agent="ua", scraper="bs", worker_pool=_FakeWorkerPool())

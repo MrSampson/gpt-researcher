@@ -15,6 +15,7 @@ import requests
 from colorama import Fore, init
 
 from gpt_researcher.utils.workers import WorkerPool
+from gpt_researcher.utils.url_security import UnsafeURLError, validate_url
 
 from . import (
     ArxivScraper,
@@ -171,7 +172,14 @@ class Scraper:
             *(self.extract_data_from_url(url, self.session) for url in self.urls)
         )
 
-        res = [content for content in contents if content["raw_content"] is not None]
+        # extract_data_from_url is expected to return a dict, but a buggy backend
+        # or cancelled worker can still yield None / non-dict. Indexing those with
+        # content["raw_content"] crashes the whole gather result and drops good rows.
+        res = [
+            content
+            for content in contents
+            if isinstance(content, dict) and content.get("raw_content") is not None
+        ]
         return res
 
     def _check_pkg(self, scrapper_name: str) -> None:
@@ -214,6 +222,19 @@ class Scraper:
         """
         async with self.worker_pool.throttle():
             try:
+                # Reject SSRF / local-file targets (internal hosts, cloud metadata
+                # endpoints, file:// paths, etc.) before any request is made.
+                try:
+                    validate_url(link)
+                except UnsafeURLError as e:
+                    self.logger.warning(f"Skipping unsafe URL {link}: {e}")
+                    return {
+                        "url": link,
+                        "raw_content": None,
+                        "image_urls": [],
+                        "title": "",
+                    }
+
                 Scraper = self.get_scraper(link)
                 scraper = Scraper(link, session)
 
